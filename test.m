@@ -34,7 +34,7 @@ Tr = T ./ Tc;
 H = enthalpyIdeal(DH, T, T0, Cp, y);
 S = entropyIdeal_PT(DS, T, T0, P, P0, Cp, y);
 % Delta M = -M0' + M* + MF'; from real to ideal, trajectory, from ideal to real
-Exergy1 = H + DHF - DH0 + T0 * (S + DSF - DS0)
+Exergy1 = H + DHF - DH0 - T0 * (S + DSF - DS0)
 
 %% Second case:
 P = 5; % bar
@@ -45,4 +45,4 @@ Tr = T ./ Tc;
 H = enthalpyIdeal(DH, T, T0, Cp, y);
 S = entropyIdeal_PT(DS, T, T0, P, P0, Cp, y);
 % Delta M = -M0' + M* + MF'; from real to ideal, trajectory, from ideal to real
-Exergy2 = H + DHF - DH0 + T0 * (S + DSF - DS0)
+Exergy2 = H + DHF - DH0 - T0 * (S + DSF - DS0)
