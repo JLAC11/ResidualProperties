@@ -8,8 +8,8 @@ function H = enthalpyIdeal(DeltaH, T, T0, Cp, y)
     H = 0;
 
     for i = 1:length(y)
-        f = @(T) polyval(Cp(i, :), T)
-        H = H + y(i) * (DeltaH(i) + integral(f, T0, T))
+        f = @(T) polyval(Cp(i, :), T);
+        H = H + y(i) * (DeltaH(i) + integral(f, T0, T));
     end
 
 end
