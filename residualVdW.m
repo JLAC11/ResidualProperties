@@ -1,4 +1,4 @@
-function [uu, hh, ss, theta, phi] = residualVdW(Pr, Tr)
+function [uu, hh, ss, theta, phi, A, B] = residualVdW(Pr, Tr)
     % residualVdW - Calculates residual properites for Van der Waals equation of
     % state, given the reduced temperature and pressure
     %
