@@ -19,30 +19,22 @@ Cp = [%AT^3   +  BT^2   +   CT    + D; In J/mol K
     -11.01e-9 1.269e-5 5.024e-2 19.89 % CH4
     -8.704e-10 4.003e-6 -1.916e-3 29.11 % H2
     ];
-
-%% Initial state values:
-Pr = P0 ./ Pc;
-Tr = T0 ./ Tc;
-[~, DH0, DS0, ~, phi0] = SRK(Pr, Tr, y, w);
+parameters = struct;
+parameters.Pc = Pc;
+parameters.Tc = Tc;
+parameters.w  = w;
+parameters.DH = DH;
+parameters.DS = DS;
+parameters.y  = y;
+parameters.Cp = Cp;
 
 %% First case:
 P = 1; % bar
 T = 425; % K
-Pr = P ./ Pc;
-Tr = T ./ Tc;
-[~, DHF, DSF, ~, phiF] = SRK(Pr, Tr, y, w);
-H = enthalpyIdeal(DH, T, T0, Cp, y);
-S = entropyIdeal_PT(DS, T, T0, P, P0, Cp, y);
-% Delta M = -M0' + M* + MF'; from real to ideal, trajectory, from ideal to real
-Exergy1 = H + DHF - DH0 - T0 * (S + DSF - DS0)
+Exergy1 = exergySRK(T,T0,P,P0,parameters)
+
 
 %% Second case:
 P = 5; % bar
 T = 698.15; % K
-Pr = P ./ Pc;
-Tr = T ./ Tc;
-[~, DHF, DSF, ~, phi] = SRK(Pr, Tr, y, w);
-H = enthalpyIdeal(DH, T, T0, Cp, y);
-S = entropyIdeal_PT(DS, T, T0, P, P0, Cp, y);
-% Delta M = -M0' + M* + MF'; from real to ideal, trajectory, from ideal to real
-Exergy2 = H + DHF - DH0 - T0 * (S + DSF - DS0)
+Exergy2 = exergySRK(T,T0,P,P0,parameters)
