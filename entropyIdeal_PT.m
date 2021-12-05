@@ -1,4 +1,4 @@
-function deltaS = entropyIdeal_PT(S, T, T0, P, P0, Cp, y)
+function deltaS = entropyIdeal_PT(S, T, T0, P, P0, Cp, y,R)
     % Returns change in entropy in J/mol K; requires heat capacity to be in J/mol K.
     % Assumes heat capacity is in polynomial form as a matrix, where each row
     % corresponds to each term, and each column to the exponent
@@ -11,15 +11,18 @@ function deltaS = entropyIdeal_PT(S, T, T0, P, P0, Cp, y)
     % Cp: heat capacity in J/mol K.
     % S: entropy of component i, listed as a row vector
     % y: mole fraction of component i, listed as a row vector
+    if nargin < 8
+       R = 8.31447; 
+    end
     for i = 1:length(y)
-        dS(i) = entropy_noP(Cp(i, :), T, T0, S(i), y(i));
+        dS(i) = entropy_noP(Cp(i, :), T, T0, S(i), y(i),R);
     end
 
-    deltaS = sum(dS) -8.31447 * log(P / P0);
+    deltaS = sum(dS) -R * log(P / P0);
 
 end
 
-function dS = entropy_noP(Cp, T, T0, S, y)
+function dS = entropy_noP(Cp, T, T0, S, y,R)
     CpentreT = @(T) polyval(Cp, T) ./ T;
-    dS = S - 8.31447 * y .* log(y) + integral(CpentreT, T0, T);
+    dS = S - R * y .* log(y) + integral(CpentreT, T0, T);
 end

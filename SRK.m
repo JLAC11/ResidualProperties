@@ -40,6 +40,7 @@ function [uu, hh, ss, theta, phi, A, B] = SRK(Pr, Tr, x, w, kij)
     for i = 1:length(p)
         zeta = roots([1 p q r]);
         z = zeta(imag(zeta) == 0);
+        z = z(real(z)>0);
     end
 
     uu = -3 * A ./ (2 * B) .* log(1 + B ./ z);

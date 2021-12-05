@@ -1,4 +1,4 @@
-function ex = exergySRK(T,T0,P,P0,params)
+function ex = exergySRK(T,T0,P,P0,params,R)
     % Calculates exergy for SRK model
     % T:  final temperature, in absolute units
     % T0: initial temperature, in absolute units
@@ -18,16 +18,22 @@ function ex = exergySRK(T,T0,P,P0,params)
     %     7. DS: Enthalpy of formation of each component at T0
     %
     % Returns exergy for the system at given conditions.
-    
+    if nargin < 6
+        R = 8.31447;
+    end
     % At initial conditions:
     [DH0, DS0] = SRKpoints(P0,params.Pc,T0,params.Tc,params.y,params.w);
+    DH0 = DH0*R*T0;
+    DS0 = DS0*R;
     % At final conditions:
     [DHF, DSF] = SRKpoints(P,params.Pc,T,params.Tc,params.y,params.w);
+    DHF = DHF*R*T;
+    DSF = DSF*R;
     % Ideal trajectory
     H = enthalpyIdeal(params.DH, T, T0, params.Cp, params.y);
-    S = entropyIdeal_PT(params.DS, T, T0, P, P0, params.Cp, params.y);
+    S = entropyIdeal_PT(params.DS, T, T0, P, P0, params.Cp, params.y,R);
     % Delta M = -M0' + M* + MF'; from real to ideal, trajectory, from ideal to real
-    ex = H + DHF - DH0 - T0 * (S + DSF - DS0);
+    ex = - DH0 + H + DHF - T0 * (S + DSF - DS0);
 end
     
 function [DeltaH, DeltaS] = SRKpoints(P,Pc,T,Tc,y,w)
