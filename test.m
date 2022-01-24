@@ -3,7 +3,7 @@ clc, clear, close all, format compact
 P0 = 1; % bar
 T0 = 298; % K
 %  CO    CO2     CH4     H2 from Smith Van Ness
-y = [60.175 34.575 3.375 1.875]; % molar fraction
+y = [60.175 34.575 3.375 1.875]/100; % molar fraction
 Pc = [34.99 73.83 45.99 13.13]; % bar
 Tc = [132.9 304.2 190.6 33.19]; % K
 w = [0.048 0.224 0.012 -0.216]; % Acentric factor
@@ -22,19 +22,18 @@ Cp = [%AT^3   +  BT^2   +   CT    + D; In J/mol K
 parameters = struct;
 parameters.Pc = Pc;
 parameters.Tc = Tc;
-parameters.w  = w;
+parameters.w = w;
 parameters.DH = DH;
 parameters.DS = DS;
-parameters.y  = y;
+parameters.y = y;
 parameters.Cp = Cp;
 
 %% First case:
 P = 1; % bar
 T = 425; % K
-Exergy1 = exergySRK(T,T0,P,P0,parameters)
-
+Exergy1 = exergySRK(T, T0, P, P0, parameters) %NOTA: Sale negativo porque el sistema recibe energía
 
 %% Second case:
 P = 5; % bar
 T = 698.15; % K
-Exergy2 = exergySRK(T,T0,P,P0,parameters)
+Exergy2 = exergySRK(T, T0, P, P0, parameters)

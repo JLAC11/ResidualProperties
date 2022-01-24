@@ -25,11 +25,11 @@ function [uu, hh, ss, theta, phi, A, B] = SRK(Pr, Tr, x, w, kij)
 
     % Individual coefficients
     alpha = (1 + (0.48 + 1.574 * w - 0.176 * w.^2) .* (1 - sqrt(Tr))).^2;
-    A = 0.42748 * (Pr ./ Tr.^(2.5)) .* alpha;
+    A = 0.42748 * (Pr ./ Tr.^(2)) .* alpha; % SRK: exponente de 2.
     B = 0.08664 * (Pr ./ Tr);
 
-    % Applying kay's mixing rule
-    Aii = sqrt(A' * A) .* (1 - kij);
+    % Applying Van der Waals' mixing rule
+    Aii = sqrt(A' * A) .* (1 - kij); % ! Verificar
     A = x * Aii * x';
     B = x * B';
 
@@ -40,11 +40,12 @@ function [uu, hh, ss, theta, phi, A, B] = SRK(Pr, Tr, x, w, kij)
     for i = 1:length(p)
         zeta = roots([1 p q r]);
         z = zeta(imag(zeta) == 0);
+        z = z(real(z)>0);
     end
 
     uu = -3 * A ./ (2 * B) .* log(1 + B ./ z);
     hh = z - 1 + uu;
     ss = log(z - B) - A ./ (2 * B) .* log(1 + B ./ z);
     theta = (A ./ B) * log(1 + B ./ z);
-    phi = exp(z - 1 - log(z - B) - theta);
+    phi = exp(z - 1 - log(z - B) - theta) % coeficiente de fugacidad
 end
