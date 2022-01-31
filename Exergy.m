@@ -1,18 +1,18 @@
-clc, clear all, close all, format compact
+clc, clear, close all, format compact
 T0 = 298.15; % K
 P0 = 1; % bar
 R = 8.31447;
 data = readtable('comps.csv')
 parameters = struct_wrapper(data);
-%% First case:
-P = 1; % bar
-T = 698.15; % K
-Exergy1 = exergySRK(T, T0, P, P0, parameters) %NOTA: Sale negativo porque el sistema recibe energía
+% %% First case:
+% P = 1; % bar
+% T = 698.15; % K
+% Exergy1 = exergySRK(T, T0, P, P0, parameters) %NOTA: Sale negativo porque el sistema recibe energía
 
 %% Second case:
 P = 5; % bar
 T = 698.15; % K
-Exergy2 = exergySRK(T, T0, P, P0, parameters)
+Exergy2 = exergySRK(T, T0, P, P0, parameters);
 
 function parameters = struct_wrapper(Data)
     parameters = struct;
@@ -23,6 +23,7 @@ function parameters = struct_wrapper(Data)
     parameters.DS = Data.DS';
     parameters.y = Data.y';
     parameters.Cp = [Data.CpA Data.CpB Data.CpC Data.CpD];
+    parameters.ExCh = Data.ExCh';
 end
 
 function ValidateData(data,tol)

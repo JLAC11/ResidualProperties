@@ -1,4 +1,4 @@
-function [uu, hh, ss, theta, phi, A, B] = SRK(Pr, Tr, x, w, kij)
+function [uu, hh, ss, gg] = SRK(Pr, Tr, x, w, kij)
     % residualSRK - Calculates residual properties for the Soave-Redlich-Kwong
     % equation of state, given the reduced temperature and pressure.
     %
@@ -26,12 +26,12 @@ function [uu, hh, ss, theta, phi, A, B] = SRK(Pr, Tr, x, w, kij)
     % Individual coefficients
     alpha = (1 + (0.48 + 1.574 * w - 0.176 * w.^2) .* (1 - sqrt(Tr))).^2;
     A = 0.42748 * (Pr ./ Tr.^(2)) .* alpha; % SRK: exponente de 2.
-    B = 0.08664 * (Pr ./ Tr);
+    Bi = 0.08664 * (Pr ./ Tr);
 
     % Applying Van der Waals' mixing rule
     Aii = sqrt(A' * A) .* (1 - kij); % ! Verificar
     A = x * Aii * x';
-    B = x * B';
+    B = x * Bi';
 
     p = -1;
     q = A - B - B.^2;
@@ -46,6 +46,9 @@ function [uu, hh, ss, theta, phi, A, B] = SRK(Pr, Tr, x, w, kij)
     uu = -3 * A ./ (2 * B) .* log(1 + B ./ z);
     hh = z - 1 + uu;
     ss = log(z - B) - A ./ (2 * B) .* log(1 + B ./ z);
-    theta = (A ./ B) * log(1 + B ./ z);
-    phi = exp(z - 1 - log(z - B) - theta) % coeficiente de fugacidad
+    
+    lnp = Bi*(z-1)/B-log(z-B)-A*(2*x*Aii/A-Bi/B)*log(1+B/z);
+    phi = exp(lnp)
+    gg = x*lnp' + x*log(x)';  % y * ln ( y * phi) y *ln y + y * ln phi
+    
 end

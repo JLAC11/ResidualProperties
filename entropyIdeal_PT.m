@@ -14,17 +14,21 @@ function deltaS = entropyIdeal_PT(S, T, T0, P, P0, Cp, y,R)
     if nargin < 8
        R = 8.31447; % J/mol K
     end
-    for i = 1:length(y)
-        dS(i) = entropy_noP(Cp(i, :), T, T0, S(i), y(i),R);
-    end
-
-    deltaS = sum(dS) - R * log(P / P0);
+    dCP = deltaCP(Cp,y)
+    dS = entropy_noP(dCP,T,T0,S,y,R)
+    pmix = - R * log(P / P0)
+    deltaS = dS + pmix
+    
 
 end
 
 function dS = entropy_noP(Cp, T, T0, S, y,R)
     CpentreT = @(T) polyval(Cp, T) ./ T;
-    sMix = - R * y .* log(y);
-    dS = S + sMix + y*integral(CpentreT, T0, T);
+    sMix = - R * y * log(y)'
+    intgr = integral(CpentreT, T0, T)
+    dS = sum(S) + sMix + intgr;
 end
 
+function dCP = deltaCP(Cp,y)
+    dCP = y*Cp; % Sumados con operacion matricial
+end
