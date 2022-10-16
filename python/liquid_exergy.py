@@ -28,7 +28,7 @@ def Cp_Shomate(coefs):  # En J / mol K
 
 
 def Cp_constant(coef):
-    return lambda T: coef * T
+    return lambda T: coef
 
 
 def read_csv_components(filename):

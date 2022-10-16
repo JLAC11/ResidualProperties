@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from multiprocessing.sharedctypes import Value
 from typing import Callable, List
 import numpy as np
 import scipy.integrate as integrate
@@ -511,8 +512,9 @@ class Stream:
                 )
                 for comp in self.components
             ]
-        )
-        return np.sum(self.get_molar_fractions() * Hs)
+        ).reshape(-1, 1)
+        x = self.get_molar_fractions().reshape(-1, 1)
+        return np.sum(x * Hs)
 
     def ideal_entropy(self, R=8.31446):
         x = self.get_molar_fractions()
@@ -629,6 +631,127 @@ class IdealGas:
         y = y.reshape(-1, 1)
         DeltaH = DeltaH.reshape(-1, 1)
         return y.T @ DeltaH + integrate.quad(Cp, IdealGas.ref.temperature, T)
+
+
+def vc_Rackett(Tc, Pc, Tr, w, R=8.31446):
+    Z_ra = 0.29056 - 0.08775 * w
+    Vc = (R * Tc / Pc) * Z_ra ** (1 + (1 - Tr) ** (2 / 7))
+    return Vc
+
+
+class ActivityModel(ABC):
+    @abstractmethod
+    def calculate_ln_gamma(self, T=None) -> np.ndarray:
+        """Calculates logarithm of activity coefficients
+
+        Args:
+            T (float, optional): Temperature at which to evaluate. Defaults to None.
+
+        Returns:
+            logarithms of activity coefficients of each species in mixture.
+        """
+        pass
+
+    @abstractmethod
+    def activity_coefficients(self, T=None) -> np.ndarray:
+        """Calculates activity coefficients of species in mixture
+
+        Args:
+            T (float, optional): Temperature at which to evaluate. Defaults to None.
+
+        Returns:
+            Activity coefficients of each species in mixture.
+        """
+        pass
+
+
+class WilsonActivityModel(ActivityModel):
+    def __init__(self, stream: Stream, params, R=8.31446, vols=None) -> None:
+        self.stream = self._is_valid_stream(stream)
+        self.params = self._valid_params(params)
+        self.R = R
+        if vols is None:
+            self.vols = vc_Rackett(
+                Tc=stream.get_Tcs(),
+                Pc=stream.get_Pcs(),
+                Tr=stream.get_Trs(),
+                w=stream.get_ws(),
+                R=R,
+            )
+        else:
+            self.vols = vols
+        pass
+
+    def _is_valid_stream(self, stream: Stream):
+        if len(stream.components) != 2:
+            raise ValueError("Model is only valid for binary interaction")
+        return stream
+
+    def _valid_params(self, params):
+        if len(params) != 2:
+            raise ValueError(
+                "Model is only valid for binary interaction. Only 2 parameters must be passed"
+            )
+        return params
+
+    def calculate_ln_gamma(self, T=None):
+        if T is None:
+            T = self.stream.state.temperature
+        R = self.R
+        x = self.stream.get_molar_fractions()
+        V1L = self.vols[0]
+        V2L = self.vols[1]
+        G12 = V2L / V1L * np.exp(-self.params[0] / (R * T))
+        G21 = V1L / V2L * np.exp(-self.params[1] / (R * T))
+        a_1 = x[0] + G12 * x[1]
+        a_2 = x[1] + G21 * x[0]
+        ln_gamma = np.array(
+            [
+                -(np.log(a_1) + x[1] * (G21 / a_2 - G12 / a_1)),
+                -(np.log(a_2) + x[0] * (G12 / a_1 - G21 / a_2)),
+            ]
+        )
+        return ln_gamma
+
+    def activity_coefficients(self, T=None):
+        return np.exp(self.calculate_ln_gamma(T=T))
+
+    def excess_enthalpy(self):
+        R = self.R
+        T = self.stream.state.temperature
+        x = self.stream.get_molar_fractions()
+        ln_gammas = lambda T: self.calculate_ln_gamma(T)
+
+        return -R * T ** 2 * np.sum(x * (derivative(ln_gammas, x0=T, dx=0.1)))
+
+    def excess_entropy(self):
+        R = self.R
+        T = self.stream.state.temperature
+        x = self.stream.get_molar_fractions()
+        ln_gammas = lambda T: self.calculate_ln_gamma(T)
+
+        return -R * np.sum(
+            x * (T * derivative(ln_gammas, x0=T, dx=0.1) + ln_gammas(T))
+        )
+
+    def enthalpy(self):
+        return self.stream.ideal_enthalpy() + self.excess_enthalpy()
+
+    def entropy(self):
+        return self.stream.ideal_entropy(R=self.R) + self.excess_entropy()
+
+    def exergy(self, s_ref: Stream = None):
+        if s_ref is None:
+            s_ref = Stream(self.stream.components, ReferenceState())
+        W_ref = WilsonActivityModel(
+            stream=s_ref, params=self.params, R=self.R, vols=self.vols
+        )
+        H = self.enthalpy()
+        H0 = W_ref.enthalpy()
+        S = self.entropy()
+        S0 = W_ref.entropy()
+        T = self.stream.state.temperature
+        return H - H0 - T * (S - S0)
 
 
 class Exergy:  # Funciona para gases
