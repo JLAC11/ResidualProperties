@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
-from aifc import Aifc_write
 from dataclasses import dataclass
 from typing import Callable, List
-from xmlrpc.client import Binary
 import numpy as np
 import scipy.integrate as integrate
 from scipy.misc import derivative
@@ -88,6 +86,15 @@ class RestrictedDeadState(ThermalProperties):
     """
 
 
+def enthalpy_ideal_pure(
+    component: Component, T, T_ref=ReferenceState.temperature
+):
+    Cp = component.heat_capacity
+    Href = component.enthalpy_of_formation
+    H = Href + integrate.quad(Cp, T_ref, T)[0]
+    return H
+
+
 class ResidualEquationOfState(ABC):
     @staticmethod
     @abstractmethod
@@ -97,6 +104,7 @@ class ResidualEquationOfState(ABC):
         x: np.ndarray,
         w: np.ndarray,
         kij: np.ndarray,
+        liq: bool = False,
     ):
         """Calculates and returns compressibility factor of equation of state
 
@@ -116,6 +124,7 @@ class ResidualEquationOfState(ABC):
         x: np.ndarray,
         w: np.ndarray,
         kij: np.ndarray = 0,
+        liq: bool = False,
     ) -> ResidualProperties:
         """Calculates and returns residual properties for components..
         Vector values must be supplied as a column vector.
@@ -171,8 +180,20 @@ class ResidualEquationOfState(ABC):
             kij (np.ndarray, optional): _description_. Defaults to 0.
             R (float, optional): _description_. Defaults to 8.31447.
         """
+        pass
 
-    pass
+    @staticmethod
+    @abstractmethod
+    def get_excess_entropy(
+        state: ThermalProperties,
+        Pc: np.ndarray,
+        Tc: np.ndarray,
+        x: np.ndarray,
+        w: np.ndarray,
+        kij: np.ndarray = 0,
+        R=8.31447,  # J / mol K
+    ):
+        pass
 
 
 class SRK(ResidualEquationOfState):
@@ -185,6 +206,11 @@ class SRK(ResidualEquationOfState):
         kij: np.ndarray = 0,
         liq: bool = False,
     ):
+        # Make them column vectors
+        x = x.reshape(-1, 1)
+        Pr = Pr.reshape(-1, 1)
+        Tr = Tr.reshape(-1, 1)
+        w = w.reshape(-1, 1)
         # Individual coefficients
         alpha = (
             1 + (0.48 + 1.574 * w - 0.176 * w ** 2) * (1 - np.sqrt(Tr))
@@ -194,32 +220,30 @@ class SRK(ResidualEquationOfState):
         Bi = 0.08664 * (Pr / Tr)
 
         # Applying Van der Waals' mixing rule
-        Aii = np.sqrt(A.T @ A) * (1 - kij)
+        Aii = np.sqrt(A @ A.T) * (1 - kij)
         if Aii.size == 1:
             A = Aii * x.T @ x
         else:
             A = x.T @ Aii @ x
+
         B = x.T @ Bi
 
         p = -1
-        q = A - B - B ** 2
-        r = -A * B
+        q = (A - B - B ** 2)[0][0]  # Extract value from matrix
+        r = (-A * B)[0][0]
 
         zeta = np.roots([1, p, q, r])
-
         z = zeta[np.imag(zeta) == 0]
         z = z[np.real(z) > 0]
         z = min(z) if liq is True else max(z)
-        # print(f"zeta: {z}")
 
         lnphi_i = (
             (Bi / B) * (z - 1)
             - np.log(z - B)
             - (A / B)
-            * (2 * np.sum(x * Aii, axis=1) / A - Bi / B)
+            * (2 * np.sum(x * Aii, axis=0).reshape(-1, 1) / A - Bi / B)
             * np.log(1 + B / z)
         )
-
         return z, A, B, lnphi_i
 
     @staticmethod
@@ -229,15 +253,18 @@ class SRK(ResidualEquationOfState):
         x: np.ndarray,
         w: np.ndarray,
         kij: np.ndarray = np.array([0]),
+        liq: bool = False,
     ) -> ResidualProperties:
 
-        z, A, B, lnphis = SRK.get_Z_factor(Pr, Tr, x, w, kij)
+        z, A, B, lnphis = SRK.get_Z_factor(Pr, Tr, x, w, kij, liq=liq)
         uu = -3 * A / (2 * B) * np.log(1 + B / z)
         hh = z - 1 + uu
         ss = np.log(z - B) - A / (2 * B) * np.log(1 + B / z)
         theta = (A / B) * np.log(1 + B / z)
         phi = np.exp(z - 1 - np.log(z - B) - theta)  # coeficiente de fugacidad
-        props = ResidualProperties(uu, hh, ss, phi, np.exp(lnphis))
+        props = ResidualProperties(
+            uu[0][0], hh[0][0], ss[0][0], phi[0][0], np.exp(lnphis)
+        )
         return props
 
     @staticmethod
@@ -275,8 +302,56 @@ class SRK(ResidualEquationOfState):
         x: np.ndarray,
         w: np.ndarray,
         kij: np.ndarray = 0,
+        R=8.31446,  # J / mol K
+    ):
+        """H_ex = R*T^2* dln phi / dT
+
+        Args:
+            state (ThermalProperties): _description_
+            Pc (np.ndarray): _description_
+            Tc (np.ndarray): _description_
+            x (np.ndarray): _description_
+            w (np.ndarray): _description_
+            kij (np.ndarray, optional): _description_. Defaults to 0.
+            R (float, optional): _description_. Defaults to 8.31447.
+
+        Returns:
+            _type_: _description_
+        """
+        # Order as column vector
+        x = x.reshape(-1, 1)
+
+        der_ln_phi_dT = derivative(
+            lambda T: SRK.get_lnphis(
+                state=ThermalProperties(temperature=T, pressure=state.pressure),
+                Pr=state.pressure / Pc,
+                Tr=T / Tc,
+                x=x,
+                w=w,
+                kij=kij,
+                liq=True,
+            ),
+            x0=state.temperature,
+            dx=0.05,
+        )
+        H_ex = -R * state.temperature ** 2 * np.sum(x * der_ln_phi_dT)
+        return H_ex
+
+    @staticmethod
+    def get_excess_entropy(
+        state: ThermalProperties,
+        Pc: np.ndarray,
+        Tc: np.ndarray,
+        x: np.ndarray,
+        w: np.ndarray,
+        kij: np.ndarray = 0,
         R=8.31447,  # J / mol K
     ):
+        # Sanitize into column vectors
+        x = x.reshape(-1, 1)
+        Pc = Pc.reshape(-1, 1)
+        Tc = Tc.reshape(-1, 1)
+        w = w.reshape(-1, 1)
         der_ln_phi_dT = derivative(
             lambda T: SRK.get_lnphis(
                 state=ThermalProperties(temperature=T, pressure=state.pressure),
@@ -290,10 +365,29 @@ class SRK(ResidualEquationOfState):
             x0=state.temperature,
             dx=0.1,
         )
-        print("d ln phi / dT")
-        print(der_ln_phi_dT)
-        H_ex = -np.sum(x * R * state.temperature ** 2 * der_ln_phi_dT)
-        return H_ex
+        ln_phi = SRK.get_lnphis(
+            state=state,
+            Pr=state.pressure / Pc,
+            Tr=state.temperature / Tc,
+            x=x,
+            w=w,
+            kij=kij,
+            liq=True,
+        )  # En mezcla
+
+        lnphi_i = np.log(
+            SRK.get_residual_properties(
+                Pr=state.pressure / Pc,
+                Tr=state.temperature / Tc,
+                x=x,
+                w=w,
+                kij=kij,
+                liq=True,
+            ).fugacity_coefficient
+        )  # Especie pura
+
+        S_ex = -R * (sum(x * (der_ln_phi_dT + ln_phi - lnphi_i)))
+        return S_ex[0]
 
 
 class PR(ResidualEquationOfState):
@@ -420,7 +514,7 @@ class Stream:
         )
         return np.sum(self.get_molar_fractions() * Hs)
 
-    def entropy_liquid(self, R=8.31446):
+    def ideal_entropy(self, R=8.31446):
         x = self.get_molar_fractions()
         S_f = self.get_entropies()
         return np.sum(x * (S_f - R * np.log(x)))
@@ -431,27 +525,70 @@ class Stream:
         T_ref=ReferenceState.temperature,
         kij=0,
         R=8.31446,
+        liq: bool = False,
     ):
         H_ideal = self.ideal_enthalpy(T_ref)
-        H_excess = EOS.get_excess_enthalpy(
-            state=self.state,
-            Tc=self.get_Tcs(),
-            Pc=self.get_Pcs(),
-            x=self.get_molar_fractions(),
-            w=self.get_ws(),
-            kij=kij,
-            R=R,
+        H_residual = (
+            EOS.get_residual_properties(
+                Pr=self.get_Prs(),
+                Tr=self.get_Trs(),
+                x=self.get_molar_fractions(),
+                w=self.get_ws(),
+                kij=kij,
+                liq=liq,
+            ).enthalpy
+            * R
+            * self.state.temperature
         )
-        return H_ideal + H_excess
+        if liq is True:
+            H_excess = EOS.get_excess_enthalpy(
+                state=self.state,
+                Tc=self.get_Tcs(),
+                Pc=self.get_Pcs(),
+                x=self.get_molar_fractions(),
+                w=self.get_ws(),
+                kij=kij,
+                R=R,
+            )
+        else:
+            H_excess = 0
 
+        return H_ideal + H_residual + H_excess
 
-def enthalpy_ideal_pure(
-    component: Component, T, T_ref=ReferenceState.temperature
-):
-    Cp = component.heat_capacity
-    Href = component.enthalpy_of_formation
-    H = Href + integrate.quad(Cp, T_ref, T)[0]
-    return H
+    def entropy_with_eos(
+        self,
+        EOS: ResidualEquationOfState,
+        T_ref=ReferenceState.temperature,
+        kij=0,
+        R=8.31446,
+        liq: bool = False,
+    ):
+        S_ideal = self.ideal_entropy(R=R)
+        S_residual = (
+            EOS.get_residual_properties(
+                Pr=self.get_Prs(),
+                Tr=self.get_Trs(),
+                x=self.get_molar_fractions(),
+                w=self.get_ws(),
+                kij=kij,
+                liq=liq,
+            ).entropy
+            * R
+        )
+        if liq is True:
+            S_excess = EOS.get_excess_entropy(
+                state=self.state,
+                Tc=self.get_Tcs(),
+                Pc=self.get_Pcs(),
+                x=self.get_molar_fractions(),
+                w=self.get_ws(),
+                kij=kij,
+                R=R,
+            )
+        else:
+            S_excess = 0
+
+        return S_ideal + S_residual + S_excess
 
 
 class IdealGas:
@@ -487,8 +624,10 @@ class IdealGas:
 
     @staticmethod
     def calculate_enthalpy(
-        DeltaH: List[float], T: float, Cp: Callable, y
+        DeltaH: np.ndarray, T: float, Cp: Callable, y
     ) -> float:
+        y = y.reshape(-1, 1)
+        DeltaH = DeltaH.reshape(-1, 1)
         return y.T @ DeltaH + integrate.quad(Cp, IdealGas.ref.temperature, T)
 
 
@@ -561,13 +700,17 @@ def liq_exergy_with_eos(
         s_ref = Stream(stream.components, ReferenceState())
 
     H = stream.enthalpy_with_eos(
-        EOS=EOS, T_ref=s_ref.state.temperature, kij=kij, R=R
+        EOS=EOS, T_ref=s_ref.state.temperature, kij=kij, R=R, liq=True
     )
     H0 = s_ref.enthalpy_with_eos(
-        EOS=EOS, T_ref=s_ref.state.temperature, kij=kij, R=R
+        EOS=EOS, T_ref=s_ref.state.temperature, kij=kij, R=R, liq=True
     )
-    S = stream.entropy_liquid(R=R)
-    S0 = s_ref.entropy_liquid(R=R)
+    S = stream.entropy_with_eos(
+        EOS=EOS, T_ref=s_ref.state.temperature, kij=kij, R=R, liq=True
+    )
+    S0 = s_ref.entropy_with_eos(
+        EOS=EOS, T_ref=s_ref.state.temperature, kij=kij, R=R, liq=True
+    )
     T = stream.state.temperature
     return H - H0 - T * (S - S0)
 
